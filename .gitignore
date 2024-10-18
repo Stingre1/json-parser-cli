@@ -1,2 +1,8 @@
 .vscode/
+.vscode/*.json
+
 *.exe
+build/
+sources/CMakeFiles/
+sources/CMakeCache.txt
+out/
