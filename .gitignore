@@ -1,8 +1,16 @@
+.gitignore
 .vscode/
+.vscode/** 
 .vscode/*.json
+.vscode/settings.json
+.vscode/tasks.json
 
 *.exe
 build/
 sources/CMakeFiles/
 sources/CMakeCache.txt
 out/
+example.json
+*.json
+*.pdf
+/.vscode/settings.json
