@@ -76,6 +76,26 @@ ValueType JsonParser::parseArray(std::ifstream& file){
     
 }
 
+std::u8string JsonParser::toUtf8(char16_t codepoint) {
+    std::u8string u8str;
+    //apologies for magic numbers. trust it works.
+    if (codepoint <= 0x7F) {
+        //is ASCII, can be appended as is
+        u8str.push_back(static_cast<char8_t>(codepoint)); 
+    } else if (codepoint <= 0x7FF) {
+        // is a 2 byte utf8 codepoint
+        u8str.push_back(static_cast<char8_t>(0b1100'0000 | (codepoint >> 6)));
+        u8str.push_back(static_cast<char8_t>(0b1000'0000 | (codepoint & 0x0011'1111)));
+    } else if (codepoint <= 0xFFFF) {
+        // is a 4 byte utf8 codepoint
+        u8str.push_back(static_cast<char8_t>(0b1110'0000 | (codepoint >> 12)));
+        u8str.push_back(static_cast<char8_t>(0b1000'0000 | ((codepoint >> 6) & 0x0011'1111)));
+        u8str.push_back(static_cast<char8_t>(0b1000'0000 | (codepoint & 0x0011'1111)));
+    }
+
+    return u8str;
+}
+
 std::u8string JsonParser::parseString(std::ifstream& file) {
     unsigned char ch;
     std::u8string str {};
@@ -101,11 +121,30 @@ std::u8string JsonParser::parseString(std::ifstream& file) {
             case 'n' : str.push_back('\n'); break;
             case 'r' : str.push_back('\r'); break;
             case 't' : str.push_back('\t'); break;
-
-            //codepoint is a basic multilingual plane. refer json.org.
+ 
+            //if the codepoint is a basic multilingual plane. refer json.org.
             //prepare for magic numbers. (it was unavoidable)
             case 'u' : 
-                char16_t bmp {0};
+                char hex[4] = {0};
+                for(char &it: hex) {
+                    file >> it;
+                }
+
+                char16_t codeUnit = std::stoi(std::string(hex, 4), nullptr, 16); // converts the string into an integer using base 16
+
+                if (codeUnit < 0xD800 || codeUnit > 0xDFFF) {
+                    // is a BMP character, so we encode as UTF-8 and push back
+                    str += toUtf8(codeUnit);
+                } else if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF) {
+                    char next[4];
+                    
+                    while(file >> ch && std::isspace(ch)); // skip spaces
+
+                    if(ch != '\\') {
+                        std::cerr<<"Expected \'\\u\' for surrogate pair.\n";
+                    }
+
+                } 
                 
 
             
@@ -114,8 +153,12 @@ std::u8string JsonParser::parseString(std::ifstream& file) {
                 str.push_back('\\');
                 str.push_back(ch);
             }
+        } else { // is a regular ascii character and so we push back
+            str.push_back(ch);
         }
     }
     return str;
 }
+
+
 

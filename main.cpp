@@ -8,7 +8,7 @@
  * TODO: figure tf out of cmake stil...
  */
 
-bool validateArgCount(int argCount) {
+inline bool validateArgCount(int argCount) {
     if (argCount < 2) {
         std::cerr << "No arguments. Please add the .json file as an argument.\n";
         return false;
@@ -19,7 +19,7 @@ bool validateArgCount(int argCount) {
     return true;
 }
 
-bool hasJSONExtension(const std::filesystem::path& path) {
+inline bool hasJSONExtension(const std::filesystem::path& path) {
     const std::string extension = ".json";
     const std::string pathStr = path.string();
     const int nameSize = pathStr.size(), extSize = extension.size();
