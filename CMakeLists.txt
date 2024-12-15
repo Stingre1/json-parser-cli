@@ -11,7 +11,8 @@ file(GLOB SOURCES "sources/*.cpp")
 add_executable(json-parser 
     main.cpp
     sources/JsonParser.cpp
-    sources/ValueType.cpp
+    sources/ValueTypes.cpp
+    sources/ErrorHandler.cpp
 )
 
 include_directories(sources)

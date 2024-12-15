@@ -1,29 +1,55 @@
 #pragma once
-#include "ValueType.h"
+#include "ValueTypes.h"
+#include "ErrorHandler.h"
 #include <stack>
 #include <fstream>
 #include <filesystem>
 
-//TODO: change errors to be errorCodes and not std::cerr
 class JsonParser {
-private:
-    size_t lineNumber;
-    enum class ErrorCode {
-        
-    };
 public:
     JsonParser();
-    void reportError(ErrorCode errCode, const std::string& context);
     void parse(const std::filesystem::path& path);
-    ValueType parseObject(std::ifstream& file);
-    ValueType parseArray(std::ifstream& file);
-    std::u8string parseString(std::ifstream& file);
-    ValueType parseValue(std::ifstream& file);
 
 private:
-    std::u8string toUtf8(char16_t codepoint); // encodes a valid BMP character into utf8
+    ErrorHandler m_errorHandler;
+    using ErrorCode = ErrorHandler::ErrorCode;
 
-    inline bool checkNewLineCharacter(char ch);
-    inline void checkAndIncrementLineCount(char ch);
+    class Context {
+    public:
+        Context(std::ifstream& file, ErrorHandler& rrorHandler);
+
+        char peek();
+        char consume();
+        void skipWhitespace();
+    public:
+        size_t line() const { return m_line; }
+        size_t column() const { return m_column; }
+    private:
+        std::ifstream& m_file;
+        size_t m_line;
+        size_t m_column;
+
+        //have to do this so consume() can use m_errorHandler
+        ErrorHandler& m_errorHandler;
+    };
+
+private:
+    std::u8string parseKey(Context& context);
+    ValueTypes parseValue(Context& context);
+    
+
+    ValueTypes parseObject(Context& context);
+    ValueTypes parseArray(Context& context);
+    std::u8string parseString(Context& context);
+    
+    uint32_t parseUnicodeEscape(Context& context);
+
+    static std::u8string encodeUTF8(uint32_t codepoint);
+    static uint32_t decodeUTF8(const std::string& input, size_t& pos);
+
+    std::u8string toUtf8(char16_t codepoint); 
+
+    bool isWhitespace(char ch) const;
+    void handleLineBreak(char ch);
 };
 

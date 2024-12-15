@@ -39,7 +39,6 @@ int main(int argc, char const *argv[]) {
     }
 
     // Parse JSON file
-    std::cout<<"File Found.\n";
     JsonParser parser;
     parser.parse(path);
 

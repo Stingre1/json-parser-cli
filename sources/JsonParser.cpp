@@ -1,78 +1,129 @@
-#include "JsonParser.h"
 #include <iostream>
 #include <fstream>
 #include <cctype>
 #include <filesystem>
-#include "ValueType.h"
+#include <charconv>
 #include <string>
-
-JsonParser::JsonParser() : lineNumber(0) {}
-
-bool JsonParser::checkNewLineCharacter(char ch) {
-    return ch == '\n' ? true : false;
-}
-
-void JsonParser::checkAndIncrementLineCount(char ch){
-    if(checkNewLineCharacter(ch)) {
-        lineNumber++;
-    }
-}
+#include "JsonParser.h"
+#include "ValueTypes.h"
+#include "ErrorHandler.h"
 
 void JsonParser::parse(const std::filesystem::path& path) {
+
     std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "Error: File is not open." << std::endl;
-        return;
-    }
+    Context context(file, m_errorHandler);
 
-    char c;    
-    while(file >> c) {
-        checkAndIncrementLineCount(c);
-        if(std::isspace(static_cast<unsigned char>(c))) { continue; }
-        switch(c) {
-        case '{':
-            parseObject(file);
-            break;
-        case '[':
-           parseArray(file);
-        default:
-            std::cerr<<"Error parsing array at line "<< lineNumber << std::endl;
-        }
-    }
-    if(file.eof()) {
-        std::cout<<"File parsed successfully.\n";
-        return;
+    context.skipWhitespace();
+
+    char c = context.consume();    
+    if (c == '{') {
+        parseObject(context);
+    } else if (c == '[') {
+        parseArray(context);
     } else {
-        std::cout<<"Error parsing file.\n";
+        m_errorHandler.handleError(ErrorCode::UnexpectedToken, std::string(1, c), context.line(), context.column());  
+        return;
+    }
+
+    // ensures no trailing spaces and then checks for eof
+    context.skipWhitespace(); 
+    if (!file.eof()) {
+        m_errorHandler.handleError(ErrorCode::TrailingData, "", context.line(), context.column());
+    } else {
+        std::cout << "File parsed successfully.\n";
     }
 }
 
-ValueType JsonParser::parseObject(std::ifstream& file){
-    char c;
-    ValueType::JSONObject object;
+ValueTypes JsonParser::parseObject(Context& context){
+    ValueTypes::JsonObject object;
     std::u8string key {};
+    
+    // we should be inside the object here
+    while(true) {
+        context.skipWhitespace();
+        char c = context.consume();
 
-    while(file >> c) {
-        checkAndIncrementLineCount(c);
-        if(std::isspace(c)) { continue; }
-
-        if(c == '}') { return true; }
-
-        switch(c) {
-        //check for key
-        case '"':
-            key = parseString(file);
-            break;
-        case ':' :
-            break;
+        switch (c) {
+        case '}': { // End of object
+             return object; 
         }
+        case '"': { // Start of key (which is a string)
+            std::u8string key = parseKey(context);
 
-        
+            ValueTypes value = parseValue(context);
+            
+            object[key] = value; // add key-value pair
 
+            context.skipWhitespace();
+
+            // Check for a trailing comma
+            c = context.peek();
+            if (c == ',') {
+                context.consume(); 
+                continue;
+            } else if (c == '}') {
+                continue; // do nothing (checked anyways in next loop)
+            } else {
+                m_errorHandler.handleError(ErrorCode::TrailingData, std::string(1, c), context.line(), context.column());
+                return object; // not sure if this is the correct approach at this moment. haven't thought how this affects nested objects here
+            }
+        }
+        default:
+            m_errorHandler.handleError(ErrorCode::UnexpectedToken, std::string(1, c), context.line(), context.column());
+            return object; // not sure if this is the correct approach at this moment. haven't thought how this affects nested objects here
+        }
     }
 }
 
-ValueType JsonParser::parseArray(std::ifstream& file){
+std::u8string JsonParser::parseKey(Context& context) {
+    // Parse the string for the key
+    std::u8string key = parseString(context);
+    
+    // Ensure the string ends with a closing quote
+    char c = context.consume();
+    if (c != '"') {
+        m_errorHandler.handleError(ErrorCode::UnexpectedToken, std::string(1, c), context.line(), context.column());
+    }
+
+    return key;
+}
+
+ValueTypes JsonParser::parseValue(Context& context) {
+    // Consume leading whitespace
+    context.skipWhitespace();
+
+    char c = context.consume();
+
+    // Check the first character to determine the value type
+    switch (c) {
+    case '"':  // String
+        return parseString(context);
+
+    case '{':  // Object
+        return parseObject(context);
+
+    case '[':  // Array
+        return parseArray(context);
+
+    case 't':  // Boolean (true)
+    case 'f':  // Boolean (false)
+        return parseBoolean(context, c);
+
+    case 'n':  // Null
+        return parseNull(context);
+
+    default:
+        if (isdigit(c) || c == '-') {  // Number (integer or decimal)
+            return parseNumber(context, c);
+        } else {
+            m_errorHandler.handleError(ErrorCode::UnexpectedToken, std::string(1, c), context.line(), context.column());
+            return {};  // Return an empty ValueType on error
+        }
+    }
+}
+
+
+ValueTypes JsonParser::parseArray(Context& context){
     
 }
 
@@ -96,10 +147,10 @@ std::u8string JsonParser::toUtf8(char16_t codepoint) {
     return u8str;
 }
 
-std::u8string JsonParser::parseString(std::ifstream& file) {
+ValueTypes JsonParser::parseString(Context& context) {
     unsigned char ch;
     std::u8string str {};
-    while (file >> ch) {
+    while (true) {
         if(std::isspace(ch)) { continue; }
         if(ch == '"') { return str; }
 
@@ -143,6 +194,7 @@ std::u8string JsonParser::parseString(std::ifstream& file) {
                     if(ch != '\\') {
                         std::cerr<<"Expected \'\\u\' for surrogate pair.\n";
                     }
+                    
 
                 } 
                 
@@ -160,5 +212,53 @@ std::u8string JsonParser::parseString(std::ifstream& file) {
     return str;
 }
 
+JsonParser::Context::Context(std::ifstream& file, ErrorHandler& errorHandler)
+    : m_file(file), m_errorHandler(errorHandler), m_line(1), m_column(0)  {
+    if (!m_file.is_open()) {
+        m_errorHandler.handleError(ErrorHandler::ErrorCode::FileNotOpen, "", m_line, m_column);
+        return;
+    }
+}
 
+char JsonParser::Context::peek() {
+    // Peek the next character in the stream without consuming it
+    return static_cast<char>(m_file.peek());
+}
+
+char JsonParser::Context::consume() {
+    // Consume the next character, updating line and column counters
+    char ch = static_cast<char>(m_file.get());
+    if (m_file.eof()) {
+        m_errorHandler.handleError(ErrorCode::UnexpectedEOF, "", m_line, m_column);
+    }
+
+    // Update line and column positions
+    if (ch == '\n') {
+        ++m_line;
+        m_column = 0;
+    } else {
+        ++m_column;
+    }
+    return ch;
+}
+
+
+void JsonParser::Context::skipWhitespace() {
+    while (m_file && isspace(peek())) {
+        consume();
+    }
+}
+
+size_t JsonParser::Context::line() const { 
+    return m_line; 
+}
+
+size_t JsonParser::Context::column() const { 
+    return m_column; 
+}
+
+
+bool JsonParser::isWhitespace(char ch) const {
+    return std::isspace(static_cast<unsigned char>(ch)) != 0;
+}
 
