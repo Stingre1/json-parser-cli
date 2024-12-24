@@ -1,5 +1,10 @@
 #include "ErrorHandler.h"
 
+ErrorHandler& ErrorHandler::getInstance() {
+    static ErrorHandler instance;
+    return instance;
+}
+
 void ErrorHandler::reportError(const std::string& message, size_t line, size_t column) {
     std::cerr << "Error: " << message 
               << " at line " << line 
@@ -35,4 +40,3 @@ void ErrorHandler::handleError(ErrorCode code, const std::string& details, size_
 
     reportError(errorMessage, line, column);
 }
-

@@ -1,5 +1,5 @@
 #pragma once
-#include "ValueTypes.h"
+#include "JsonValue.h"
 #include "ErrorHandler.h"
 #include <stack>
 #include <fstream>
@@ -16,7 +16,7 @@ private:
 
     class Context {
     public:
-        Context(std::ifstream& file, ErrorHandler& rrorHandler);
+        Context(std::ifstream& file);
 
         char peek();
         char consume();
@@ -29,22 +29,21 @@ private:
         size_t m_line;
         size_t m_column;
 
-        //have to do this so consume() can use m_errorHandler
-        ErrorHandler& m_errorHandler;
+        
     };
 
 private:
     std::u8string parseKey(Context& context);
-    ValueTypes parseValue(Context& context);
+    std::unique_ptr<JsonValue> parseValue(Context& context);
     
 
-    ValueTypes parseObject(Context& context);
-    ValueTypes parseArray(Context& context);
-    std::u8string parseString(Context& context);
+    std::unique_ptr<JsonValue> parseObject(Context& context);
+    std::unique_ptr<JsonValue> parseArray(Context& context);
+    std::unique_ptr<JsonValue> parseString(Context& context);
     
     uint32_t parseUnicodeEscape(Context& context);
 
-    static std::u8string encodeUTF8(uint32_t codepoint);
+    static std::u8string encodeUTF8(uint32_t codepoint, int line, int column);
     static uint32_t decodeUTF8(const std::string& input, size_t& pos);
 
     std::u8string toUtf8(char16_t codepoint); 
